@@ -1,5 +1,5 @@
 " ============================================================================
-" File:        vimxcode.vim     
+" File:        vimXcode.vim     
 " Description: vim plugin for building and running Xcode projects
 " Maintainer:  Harikrishnan Gopalakrishnan <hari.exeption at gmail dot com>
 " Last Change: 25 February, 2013
