@@ -343,5 +343,79 @@ function! s:ExecuteXCmd( path, cmd )
   return ""
 endfunction
 
-" call ExecuteXCmd( "xcodebuild" )
+" User interface ( menu ) functions
+" Inspired from the awesome NERDTree menus for style and code :)
+function! s:ShowMenuAndGetResponse( title, items, footer )
+  let s:selection = 1
+  let done = 0
+  
+  let l:itemKeys = keys( a:items )
+
+  while !done
+    redraw!
+    call s:EchoPrompt( a:title, a:items, a:footer )
+    let key = nr2char( getchar() )
+    let done = s:HandleKeypress( key, l:itemKeys )
+  endwhile
+
+  return s:selection
+endfunction
+
+function! s:EchoPrompt( title, items, footer )
+  echo "vimXcode menu. Use j/k/enter"
+  echo "=============================="
+  echo a:title
+  echo "---"
+  
+  for i in keys( a:items )
+    let l:disp = a:items[i].value
+    if exists( a:items[i].name )
+      let l:disp = a:items[i].name
+    endif
+    if s:selection == i
+      echo "> " . l:disp
+    else
+      echo "  " . l:disp
+    endif
+  endfor
+
+  if a:footer != ""
+    echo "---"
+    echo a:footer
+  endif
+endfunction
+
+"change the selection (if appropriate) and return 1 if the user has made
+"their choice, 0 otherwise
+function! s:HandleKeypress( key, items )
+  if a:key == 'j'
+    if s:selection < len( a:items )
+      let s:selection += 1
+    else
+      let s:selection = 1
+    endif
+  elseif a:key == 'k'
+    if s:selection > 1
+      let s:selection -= 1
+    else
+      let s:selection = len( a:items )
+    endif
+  elseif a:key == nr2char(27) "escape
+    let s:selection = -1
+    return 1
+  elseif a:key == "\r" || a:key == "\n" "enter and ctrl-j
+    return 1
+  endif
+
+  return 0
+endfunction
+
+function! g:TestMenu()
+  let l:items = { 1 : { "name" : "hello", "value" : "some val" }, 2 : { "name" : "hello2", "value" : "some val" }, 3 : { "name" : "hello3", "value" : "some val" } }
+  let l:title = "Test menu"
+  let l:footer = "If no choice is made default will be used:"
+
+  let l:resp = s:ShowMenuAndGetResponse( l:title, l:items, l:footer )
+  echo "response = " . l:resp
+endfunction
 
