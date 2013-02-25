@@ -43,7 +43,7 @@ while in NORMAL mode,
 
 ###Configuring
 Following vim commands are currently implemented
- * `:XcodeChooseSDK` - Choose a suported SDK installed on your system
+ * `:XcodeChooseSDK` - Choose a supported SDK installed on your system
  * `:XcodeChooseTarget` - Choose a build target
  * `:XcodeChooseConfiguration` - Choose a build Configuration. Debug, Release *
  * `:XcodeChooseArchitecture` - Choose an Architecture from the valid architecture list
