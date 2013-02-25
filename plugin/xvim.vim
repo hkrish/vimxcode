@@ -1,10 +1,15 @@
 
 setlocal noignorecase
+setlocal magic
 
 nnoremap <F5> :call g:Xcodebuild()<cr>
 nnoremap <F6> :call g:XcodebuildAndRun()<cr>
+nnoremap <F7> :call g:TestMenu()<cr>
 
 let s:errNotFound = "Could not locate a *.xcodeproj file. Try with a \".xvim\" file in the root directory of your project."
+
+" echom messages
+let s:Debug = 1
 
 function! s:FindXrootdir()
   
@@ -15,7 +20,8 @@ function! s:FindXrootdir()
 
   let s:lastBuildStatus = 0
 
-  let l:projPath = globpath( expand( '.' ), "*.xcodeproj" )
+  " Look in all the subdirectories
+  let l:projPath = globpath( expand( '.' ), "**/*.xcodeproj" )
   if l:projPath == ""
     " Look in all the subdirectories starting from one directory above
     let l:projPath = globpath( expand( '..' ), "**/*.xcodeproj" )
@@ -38,7 +44,12 @@ function! s:FindXrootdir()
   if l:projPath == ""
     echo s:errNotFound
   else
+    let l:projPath = fnamemodify( l:projPath , ":p:h" )
     let b:xcode_proj_path = l:projPath
+  endif
+
+  if s:Debug
+    echom "s:FindXrootdir() = " . l:projPath
   endif
 
   return l:projPath
@@ -48,16 +59,155 @@ function! s:BuildCmd()
   if !exists('b:xcode_proj_sdk'    ) | let b:xcode_proj_sdk    = ""      | endif
   if !exists('b:xcode_proj_config' ) | let b:xcode_proj_config = "Debug" | endif
   if !exists('b:xcode_proj_target' ) | let b:xcode_proj_target = ""      | endif
+  if !exists('b:xcode_proj_arch  ' ) | let b:xcode_proj_arch   = ""      | endif
 
   let l:cmd = 'xcodebuild'
   
   if( b:xcode_proj_sdk    != "" ) | let l:cmd = l:cmd . " -sdk " . b:xcode_proj_sdk              | endif
   if( b:xcode_proj_config != "" ) | let l:cmd = l:cmd . " -configuration " . b:xcode_proj_config | endif
-  if( b:xcode_proj_target != "" ) | let l:cmd = l:cmd . " -target " . b:xcode_proj_target        | endif
+  if( b:xcode_proj_arch   != "" ) | let l:cmd = l:cmd . " -arch " . b:xcode_proj_arch            | endif
+  if( b:xcode_proj_target != "" )
+    if( b:xcode_proj_target == "All Targets" )
+      let l:cmd = l:cmd . " -alltargets"
+    else
+      let l:cmd = l:cmd . " -target " . b:xcode_proj_target
+    endif
+  endif
+
+  if s:Debug
+    echom "Build Command Generated: " . l:cmd
+  endif
 
   return l:cmd
 endfunction
 
+" Read and parse the output of xcodebuild -showsdks, xcodebuild -list
+" and xcodebuild -showBuildSettings commands.
+" Mainly added for parsing options for the user menu.
+" Following are currently read
+"   - supported sdks
+"   - supported architectures
+"   - targets defined in the Xcode project file 
+"   - configurations defined in Xcode project file
+function! s:ParseXcodeBuildSettings()
+  let l:xcodeSDKsPattern               = '^\s\+\zs\(.\{-}\)\s\+-sdk\s\+\(.\{-}\)$'
+  let l:xcodeGroupStartPattern         = '^\s\{4}.*:'
+  let l:xcodeTargetsGroupStartPattern  = '^\s\{4}Targets:'
+  let l:xcodeConfigsGroupStartPattern  = '^\s\{4}Build Configurations:'
+  let l:xcodeTargetsConfigsItemPattern = '^\s\{8}\(.*\)$'
+  let l:xcodeBuildValidArchsPattern    = '\n\s\{4}VALID_ARCHS\s\+=\s\+\(.\{-}\)\n'
+  let l:xcodeBuildCurrentArchsPattern  = '\n\s\{4}CURRENT_ARCH\s\+=\s\+\(.\{-}\)\n'
+
+  let l:sdks           = {}
+  let l:configurations = {}
+  let l:targets        = {}
+  let l:archs          = {}
+
+  let l:projPath = s:FindXrootdir()
+  if l:projPath != ""
+    let l:projRoot = fnamemodify( l:projPath, ":h" )
+
+    echo "reading and parsing xcodebuild settings"
+
+    " Parse supported SDKs
+    let l:xcres = system( "cd " . l:projRoot . '; xcodebuild -showsdks' )
+    let l:xcresList = split( l:xcres, '\n' )
+    " To keep the same order of items as xcodebuild spits out, let's use a
+    " counter as dictionary index
+    let l:menuItem = 1
+    for item in l:xcresList
+      let l:matches = matchlist( item, l:xcodeSDKsPattern )
+      if len( l:matches ) > 0
+        let l:sdks[l:menuItem] = { "name" : l:matches[1], "value" : l:matches[2] }
+        let l:menuItem = l:menuItem + 1
+      endif
+    endfor
+
+    " Parse supported configurations and targets
+    let l:xcres = system( "cd " . l:projRoot . '; xcodebuild -list' )
+    let l:xcresList = split( l:xcres, '\n' )
+    let l:menuItem = 1
+    " Loop over the l:xcresList only once, l:targetOrConfiguration indicates which
+    " class (target or config), current property belongs to.
+    " l:targetOrConfiguration => 1 - target, 2 - config, any_other_value - none
+    let l:targetOrConfiguration = 0
+    for item in l:xcresList
+      let l:matches = matchlist( item, l:xcodeGroupStartPattern )
+      if len( l:matches ) > 0
+        " item is a group; findout which one. Pattern matching? I miss Scala! :S
+        let l:matches = matchlist( item, l:xcodeTargetsGroupStartPattern )
+        if len( l:matches ) > 0
+          let l:targetOrConfiguration = 1
+          let l:menuItem = 1
+        else
+          let l:matches = matchlist( item, l:xcodeConfigsGroupStartPattern )
+          if len( l:matches ) > 0
+            let l:targetOrConfiguration = 2
+            let l:menuItem = 1
+          else
+            let l:targetOrConfiguration = 0
+          endif
+        endif
+      endif
+
+      " Process items in groups
+      let l:matches = matchlist( item, l:xcodeTargetsConfigsItemPattern )
+      if len( l:matches ) > 0
+        
+        if l:targetOrConfiguration == 1
+          let l:targets[l:menuItem] = { "value" : l:matches[1] }
+        elseif l:targetOrConfiguration == 2
+          let l:configurations[l:menuItem] = { "value" : l:matches[1] }
+        endif
+        
+        let l:menuItem = l:menuItem + 1
+      endif
+    endfor
+
+    let l:targetKeys = keys( l:targets )
+    if len( l:targetKeys ) > 0
+      let l:targets[ l:targetKeys[-1] + 1 ] = { "value" : "All Targets" }
+    endif
+
+    " Parse supported architectures
+    let l:xcres = system( "cd " . l:projRoot . '; xcodebuild -showBuildSettings' )
+    let l:xcres1 = matchlist( l:xcres, l:xcodeBuildCurrentArchsPattern )
+    let l:xcres2 = matchlist( l:xcres, l:xcodeBuildValidArchsPattern )
+
+    let l:menuItem = 1
+    if len( l:xcres2 ) > 1
+      let l:xcresList = split( l:xcres2[1], '\s' )
+      for item in l:xcresList
+        let l:archs[l:menuItem] = { "value" : item }
+        let l:menuItem = l:menuItem + 1
+      endfor
+    endif
+
+    if len( l:xcres1 ) > 1
+      let l:archs[l:menuItem] = { "name" : "Xcode Project Setting", "value" : l:xcres1[1] }
+    endif
+
+
+    let b:parsed_build_settings          = 1
+    let b:xcode_supported_sdks           = l:sdks
+    let b:xcode_supported_targets        = l:targets
+    let b:xcode_supported_configurations = l:configurations
+
+    if s:Debug
+      echo "SDKS = "
+      echo l:sdks
+      echo "Targets = "
+      echo l:targets
+      echo "Configurations = "
+      echo l:configurations
+      echo "Architectures = "
+      echo l:archs
+    endif
+
+  endif
+endfunction
+
+" Read the build directory from Xcode project file.
 function! s:XcodeBuildDir()
   if exists('b:xcode_build_dir')
     return b:xcode_build_dir
@@ -81,6 +231,7 @@ function! s:XcodeBuildDir()
   return l:projBuildDir
 endfunction
 
+" Read the build target name from Xcode project file.
 function! s:XcodeBuildTarget()
   if exists('b:xcode_build_target')
     return b:xcode_build_target
@@ -91,10 +242,10 @@ function! s:XcodeBuildTarget()
 
   if l:projPath != ""
     " Find the TARGET_NAME from the xcode project setting
-    let l:xcodeBuildDirPattern = '\s*TARGET_NAME\s*=\s*\(.*\)\n'
+    let l:xcodeBuildTergetPattern = '\s*TARGET_NAME\s*=\s*\(.*\)\n'
     let l:projRoot = fnamemodify( l:projPath, ":h" )
     let l:xcres = system( "cd " . l:projRoot . '; xcodebuild -showBuildSettings | grep -i "\bTARGET_NAME\b"' )
-    let l:xcresList = matchlist( l:xcres, l:xcodeBuildDirPattern )
+    let l:xcresList = matchlist( l:xcres, l:xcodeBuildTergetPattern )
     if len( l:xcresList ) > 1
       let l:projBuildTarget = l:xcresList[1]
       let b:xcode_build_target = l:projBuildTarget
@@ -139,6 +290,10 @@ endfunction
 "   Some parts are directly copied from jerrymarino's xcodebuild.vim project
 "   [xcodebuild](https://github.com/jerrymarino/xcodebuild.vim, "thanks! :)")
 function! s:ExecuteXCmd( path, cmd )
+  if s:Debug
+    echom "s:ExecuteXCmd( " . a:path . ", " . a:cmd . " )"
+  endif
+
   let l:xcodeSuccessPattern = '\*\*\s\+BUILD SUCCEEDED\s\+\*\*'
   let l:xcodeErrorPattern = '/\(.*:\s*fatal error\s*:.*\)\|\(.*:\s*error\s*:.*\)\|\(.*:\s*warning\s*:.*\)/ig'
 
@@ -166,7 +321,8 @@ function! s:ExecuteXCmd( path, cmd )
       endif
     endfor
 
-    let s:efm = escape(&errorformat, "\" ") 
+    let s:efm = escape(&errorformat, "\" ")
+    " TODO Needs to validate this errorformat agaist all possible inputs
     set errorformat=
           \%A%f:%l:%c:{%*[^}]}:\ error:\ %m,
           \%A%f:%l:%c:{%*[^}]}:\ fatal\ error:\ %m,
