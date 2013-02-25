@@ -1,12 +1,33 @@
+" ============================================================================
+" File:        vimxcode.vim     
+" Description: vim plugin for building and running Xcode projects
+" Maintainer:  Harikrishnan Gopalakrishnan <hari.exeption at gmail dot com>
+" Last Change: 25 February, 2013
+" License:     This program is free software. It comes without any warranty,
+"              to the extent permitted by applicable law. You can redistribute
+"              it and/or modify it under the terms of the Do What The Fuck You
+"              Want To Public License, Version 2, as published by Sam Hocevar.
+"              See http://sam.zoy.org/wtfpl/COPYING for more details.
+"
+" ============================================================================
 
 setlocal noignorecase
 setlocal magic
 
 nnoremap <F5> :call g:Xcodebuild()<cr>
 nnoremap <F6> :call g:XcodebuildAndRun()<cr>
-nnoremap <F7> :call g:TestMenu()<cr>
+
+command! -n=0 XcodeChooseSDK :call g:XcodeChooseSDK()
+command! -n=0 XcodeChooseTarget :call g:XcodeChooseTarget()
+command! -n=0 XcodeChooseConfiguration :call g:XcodeChooseConfiguration()
+command! -n=0 XcodeChooseArchitecture :call g:XcodeChooseArch()
+
+nnoremap <F7> :call g:XcodeChooseSDK()<cr>
+nnoremap <F8> :call g:XcodeChooseTarget()<cr>
 
 let s:errNotFound = "Could not locate a *.xcodeproj file. Try with a \".xvim\" file in the root directory of your project."
+let s:messMenuTitleNote = "Note: This choice is active only through this vim session."
+let s:messMenuFooter = "If no choice (press ESC) is made default/current setting will be used:"
 
 " echom messages
 let s:Debug = 1
@@ -59,7 +80,7 @@ function! s:BuildCmd()
   if !exists('b:xcode_proj_sdk'    ) | let b:xcode_proj_sdk    = ""      | endif
   if !exists('b:xcode_proj_config' ) | let b:xcode_proj_config = "Debug" | endif
   if !exists('b:xcode_proj_target' ) | let b:xcode_proj_target = ""      | endif
-  if !exists('b:xcode_proj_arch  ' ) | let b:xcode_proj_arch   = ""      | endif
+  if !exists('b:xcode_proj_arch'   ) | let b:xcode_proj_arch   = ""      | endif
 
   let l:cmd = 'xcodebuild'
   
@@ -192,6 +213,7 @@ function! s:ParseXcodeBuildSettings()
     let b:xcode_supported_sdks           = l:sdks
     let b:xcode_supported_targets        = l:targets
     let b:xcode_supported_configurations = l:configurations
+    let b:xcode_supported_archs          = l:archs
 
     if s:Debug
       echo "SDKS = "
@@ -368,10 +390,7 @@ function! s:EchoPrompt( title, items, footer )
   echo "---"
   
   for i in keys( a:items )
-    let l:disp = a:items[i].value
-    if exists( a:items[i].name )
-      let l:disp = a:items[i].name
-    endif
+    let l:disp = get( a:items[i], "name", a:items[i].value )
     if s:selection == i
       echo "> " . l:disp
     else
@@ -410,12 +429,73 @@ function! s:HandleKeypress( key, items )
   return 0
 endfunction
 
-function! g:TestMenu()
-  let l:items = { 1 : { "name" : "hello", "value" : "some val" }, 2 : { "name" : "hello2", "value" : "some val" }, 3 : { "name" : "hello3", "value" : "some val" } }
-  let l:title = "Test menu"
-  let l:footer = "If no choice is made default will be used:"
+" User defined functions
 
-  let l:resp = s:ShowMenuAndGetResponse( l:title, l:items, l:footer )
-  echo "response = " . l:resp
+"FUNCTION: g:XcodeChooseSDK()"
+function! g:XcodeChooseSDK()
+  if !exists( 'b:parsed_build_settings' )
+    call s:ParseXcodeBuildSettings()
+  endif
+
+  let l:title = "Choose a SDK. " . s:messMenuTitleNote
+
+  let l:resp = s:ShowMenuAndGetResponse( l:title, b:xcode_supported_sdks, s:messMenuFooter )
+  if l:resp > 0
+    try
+      let b:xcode_proj_sdk = b:xcode_supported_sdks[l:resp].value
+      echo "Using " . b:xcode_supported_sdks[l:resp].name . " [ -sdk " . b:xcode_supported_sdks[l:resp].value . " ]"
+    endtry
+  endif
+endfunction
+
+"FUNCTION: g:XcodeChooseTarget()"
+function! g:XcodeChooseTarget()
+  if !exists( 'b:parsed_build_settings' )
+    call s:ParseXcodeBuildSettings()
+  endif
+
+  let l:title = "Choose Target. " . s:messMenuTitleNote
+
+  let l:resp = s:ShowMenuAndGetResponse( l:title, b:xcode_supported_targets, s:messMenuFooter )
+  if l:resp > 0
+    try
+      let b:xcode_proj_target = b:xcode_supported_targets[l:resp].value
+      echo "Using "  b:xcode_supported_targets[l:resp].value 
+    endtry
+  endif
+endfunction
+
+"FUNCTION: g:XcodeChooseConfiguration()"
+function! g:XcodeChooseConfiguration()
+  if !exists( 'b:parsed_build_settings' )
+    call s:ParseXcodeBuildSettings()
+  endif
+
+  let l:title = "Choose Build Configuration. " . s:messMenuTitleNote
+
+  let l:resp = s:ShowMenuAndGetResponse( l:title, b:xcode_supported_configurations, s:messMenuFooter )
+  if l:resp > 0
+    try
+      let b:xcode_proj_config = b:xcode_supported_configurations[l:resp].value
+      echo "Using "  b:xcode_supported_configurations[l:resp].value 
+    endtry
+  endif
+endfunction
+
+"FUNCTION: g:XcodeChooseArch()"
+function! g:XcodeChooseArch()
+  if !exists( 'b:parsed_build_settings' )
+    call s:ParseXcodeBuildSettings()
+  endif
+
+  let l:title = "Choose Architecture. " . s:messMenuTitleNote
+
+  let l:resp = s:ShowMenuAndGetResponse( l:title, b:xcode_supported_archs, s:messMenuFooter )
+  if l:resp > 0
+    try
+      let b:xcode_proj_arch = b:xcode_supported_archs[l:resp].value
+      echo "Using "  b:xcode_supported_archs[l:resp].value 
+    endtry
+  endif
 endfunction
 
