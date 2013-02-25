@@ -22,9 +22,6 @@ command! -n=0 XcodeChooseTarget :call g:XcodeChooseTarget()
 command! -n=0 XcodeChooseConfiguration :call g:XcodeChooseConfiguration()
 command! -n=0 XcodeChooseArchitecture :call g:XcodeChooseArch()
 
-nnoremap <F7> :call g:XcodeChooseSDK()<cr>
-nnoremap <F8> :call g:XcodeChooseTarget()<cr>
-
 let s:errNotFound = "Could not locate a *.xcodeproj file. Try with a \".xvim\" file in the root directory of your project."
 let s:messMenuTitleNote = "Note: This choice is active only through this vim session."
 let s:messMenuFooter = "If no choice (press ESC) is made default/current setting will be used:"
