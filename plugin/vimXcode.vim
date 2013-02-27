@@ -21,6 +21,7 @@ command! -n=0 XcodeChooseSDK :call g:XcodeChooseSDK()
 command! -n=0 XcodeChooseTarget :call g:XcodeChooseTarget()
 command! -n=0 XcodeChooseConfiguration :call g:XcodeChooseConfiguration()
 command! -n=0 XcodeChooseArchitecture :call g:XcodeChooseArch()
+command! -n=0 XcodeChooseProject :call g:XcodeChooseProject()
 
 let s:errNotFound = "Could not locate a *.xcodeproj file. Try with a \".xvim\" file in the root directory of your project."
 let s:messMenuTitleNote = "Note: This choice is active only through this vim session."
@@ -28,11 +29,12 @@ let s:messMenuFooter = "If no choice (press ESC) is made default/current setting
 
 " echom messages
 let s:Debug = 1
+let s:XcodeProjectPathReset = 1
 
 function! s:FindXrootdir()
   
   " TODO Do this only once per buffer if the results in a Successful Build
-  if exists('b:xcode_proj_path')
+  if exists('b:xcode_proj_path') && !s:XcodeProjectPathReset
     return b:xcode_proj_path
   endif
 
@@ -62,13 +64,15 @@ function! s:FindXrootdir()
   if l:projPath == ""
     echo s:errNotFound
   else
-    " TODO In case of multiple projects display a menu?
+    echo l:projPath
     let l:projPathList = split( l:projPath, "\n" )
     if( len( l:projPathList ) > 1 )
       let l:projPath = s:XcodeChooseXcodeProject( l:projPathList )
     endif
 
     let l:projPath = fnamemodify( l:projPath , ":p:h" )
+    let b:xcode_proj_path = l:projPath
+    let s:XcodeProjectPathReset = 0
   endif
 
   if s:Debug
@@ -82,14 +86,19 @@ function! s:XcodeChooseXcodeProject( projects )
   let l:title = "Multiple projects found at " . fnamemodify( expand( "." ), ":p:h" )
   let l:footer = "<Escape> chooses the first project! Choose a project:"
 
-  let l:projectIndex = 0
-  let l:projectDict = map( a:projects, { (l:projectIndex + 1) : { "value" : v:val } } )
-  echo l:projectDict
+  let l:projectIndex = 1
+  let l:projectDict = {}
+  for i in a:projects
+    let l:projectDict[ l:projectIndex ] = { "value" : i }
+    let l:projectIndex = l:projectIndex + 1
+  endfor
 
   let l:resp = s:ShowMenuAndGetResponse( l:title, l:projectDict, l:footer )
   if l:resp <= 0
     let l:resp = 1
   endif
+
+  echom "Current project is " . l:projectDict[l:resp].value
 
   return l:projectDict[l:resp].value
 endfunction
@@ -348,7 +357,6 @@ function! s:ExecuteXCmd( path, cmd )
   if( l:res >= 0 )
     echom 'Build successful.'
     let s:lastBuildStatus = 1
-    let b:xcode_proj_path = l:projPath
     execute "cclose"
   else
     echom 'Build failed!'
@@ -516,5 +524,11 @@ function! g:XcodeChooseArch()
       echo "Using "  b:xcode_supported_archs[l:resp].value 
     endtry
   endif
+endfunction
+
+"FUNCTION: g:XcodeChooseProject()"
+function! g:XcodeChooseProject()
+  let s:XcodeProjectPathReset = 1
+  let l:proj = s:FindXrootdir()
 endfunction
 
