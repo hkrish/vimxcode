@@ -31,7 +31,7 @@ let s:Debug = 1
 
 function! s:FindXrootdir()
   
-  " TODO Do this only once per buffer?
+  " TODO Do this only once per buffer if the results in a Successful Build
   if exists('b:xcode_proj_path')
     return b:xcode_proj_path
   endif
@@ -62,8 +62,13 @@ function! s:FindXrootdir()
   if l:projPath == ""
     echo s:errNotFound
   else
+    " TODO In case of multiple projects display a menu?
+    let l:projPathList = split( l:projPath, "\n" )
+    if( len( l:projPathList ) > 1 )
+      let l:projPath = s:XcodeChooseXcodeProject( l:projPathList )
+    endif
+
     let l:projPath = fnamemodify( l:projPath , ":p:h" )
-    let b:xcode_proj_path = l:projPath
   endif
 
   if s:Debug
@@ -71,6 +76,22 @@ function! s:FindXrootdir()
   endif
 
   return l:projPath
+endfunction
+
+function! s:XcodeChooseXcodeProject( projects )
+  let l:title = "Multiple projects found at " . fnamemodify( expand( "." ), ":p:h" )
+  let l:footer = "<Escape> chooses the first project! Choose a project:"
+
+  let l:projectIndex = 0
+  let l:projectDict = map( a:projects, { (l:projectIndex + 1) : { "value" : v:val } } )
+  echo l:projectDict
+
+  let l:resp = s:ShowMenuAndGetResponse( l:title, l:projectDict, l:footer )
+  if l:resp <= 0
+    let l:resp = 1
+  endif
+
+  return l:projectDict[l:resp].value
 endfunction
 
 function! s:BuildCmd()
@@ -327,6 +348,7 @@ function! s:ExecuteXCmd( path, cmd )
   if( l:res >= 0 )
     echom 'Build successful.'
     let s:lastBuildStatus = 1
+    let b:xcode_proj_path = l:projPath
     execute "cclose"
   else
     echom 'Build failed!'
